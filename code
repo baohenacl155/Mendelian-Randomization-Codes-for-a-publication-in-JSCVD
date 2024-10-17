@@ -1,0 +1,257 @@
+# Load the packages you need to use, if you don't have them installed, you need to install them in advance.
+library(TwoSampleMR)
+library(data.table)
+library(tidyverse)
+library(readxl)
+library(writexl)
+library(mr.raps)
+library(ieugwasr)
+library(dplyr)
+library(MendelianRandomization)
+
+
+##Read your exposure data. 
+setwd(dir="D:/mendelian")
+expsure.sx<-read.csv("SGLT2.csv")   ######If the step performed is “MR analysis between plasma proteins and outcome”, the data read here is the GWAS data of the plasma proteins.
+head(expsure.sx)
+expsure.dq<-read_exposure_data(filename = "expsure.sx.csv", 
+                            sep = ",", 
+                            
+                            snp_col = "SNP", 
+                            
+                            beta_col = "beta", 
+                            
+                            se_col = "se",
+                            
+                            effect_allele_col = "effect_allele",
+                            
+                            other_allele_col = "other_allele",
+                            
+                            pval_col = "pval")
+
+
+##Remove chain imbalance (LD). If the MR analysis is performed with SGLT2 inhibitors as exposure, this step is not performed
+#expsure.clump <-clump_data(expsure.dq,
+                     #clump_r2=0.001, #THRESHOLD: 
+                     #clump_kb=10000) #THRESHOLD
+exposure_dat <-expsure.dq
+
+### Read the outcome data
+outcome.xiazai<-fread("ischemic stroke.txt",header = T)
+
+
+# Extract the outcome data.
+#Change the names of the columns for the outcome data, at least the snp column is correct.
+HB<-merge(exposure_dat,
+             outcome.xiazai,
+             by.x = "SNP",
+             by.y = "SNP")
+head(outcome.xiazai)
+write.csv(HB,file="HB.csv")
+
+# Read the outcome data, here change the corresponding column names
+head(HB)
+HB1<-read_outcome_data(filename = "HB.csv",
+                         snps = HB$SNP,
+                         sep = ",",
+                         snp_col = "SNP",
+                         beta_col = "beta",
+                         se_col = "se",
+                         effect_allele_col = "effect_allele",
+                         other_allele_col = "other_allele",
+                         pval_col = "P")
+
+View(HB1)
+dim(HB1)
+
+# Correct in the same direction
+Mydata<-harmonise_data(
+  exposure_dat=exposure_dat,
+  outcome_dat=HB1,
+  action= 2  
+)                                 
+View(Mydata)
+dim(Mydata)
+res1 <- mr(Mydata)
+res1  #Results calculations
+write.csv(res, file="D:\\mendelian\\res1.csv")
+
+
+
+#Heterogeneity, sensitivity, multivariate analysis
+
+mr_heterogeneity(Mydata, method_list=c("mr_egger_regression", "mr_ivw"))  #Heterogeneity Test ——IVW or MRegger
+
+pleio <- mr_pleiotropy_test(Mydata) 
+
+pleio   #horizontal polytropy test——MR egger
+View(pleio)
+write.csv(pleio, file="C:\\Users\\MAC\\Desktop\\jingge\\pleio.csv")
+
+
+single <- mr_leaveoneout(Mydata)
+mr_leaveoneout_plot(single)   #Leave-one-out test for sensitivity
+write.csv(single, file="C:\\Users\\MAC\\Desktop\\jingge\\single.csv")
+mr_scatter_plot(res,Mydata)# Scatter plot
+res_single <- mr_singlesnp(Mydata)
+mr_forest_plot(res_single) # Forest plot
+mr_funnel_plot(res_single) #Funnel plot
+generate_odds_ratios(res) #Calculate OR value
+
+#MRPRESSO  #### We didn't perform this step, and the reader can perform it if they want to
+library(MRPRESSO)
+mr_presso(BetaOutcome ="beta.outcome", BetaExposure = "beta.exposure", SdOutcome ="se.outcome", SdExposure = "se.exposure", OUTLIERtest = TRUE,DISTORTIONtest = TRUE, data =Mydata, NbDistribution = 1000, SignifThreshold = 0.05)
+
+#I2=[Q-(K-1)]/Q
+mr(dat)
+generate_odds_ratios(mr_res = mr(dat))
+mr(dat,method_list = c("mr_ivw","mr_egger_regression","mr_weighted_median"))
+mr_scatter_plot(mr_results = mr(dat,method_list = c("mr_ivw","mr_egger_regression","mr_weighted_median")),dat)
+mr_heterogeneity(dat)
+mr_funnel_plot(singlesnp_results = mr_singlesnp(dat))
+mr_pleiotropy_test(dat)
+mr_leaveoneout_plot(leaveoneout_results = mr_leaveoneout(dat))
+
+
+
+
+
+
+###########################meditor
+#step 1 SGLT2 to OUTCOME
+
+res1 <- mr(Mydata)
+res1  
+write.csv(res, file="D:\\mendelian\\res1.csv")
+
+res1 <- data.table::fread("D:\\mendelian\\res1.csv",data.table = F)
+
+
+#step 2 SGLT2 to meditor
+expsure.sx<-read.csv("SGLT2.csv")
+###read.outcome
+outcome.xiazai<-fread("meditor.txt",header = T)
+# Extract the outcome data.
+#Change the names of the columns for the outcome data, at least the snp column is correct.
+HB<-merge(exposure_sx,
+          outcome.xiazai,
+          by.x = "SNP",
+          by.y = "SNP")
+head(outcome.xiazai)
+write.csv(HB,file="HB.csv")
+# Read the outcome data, here change the corresponding column names
+head(HB)
+HB1<-read_outcome_data(filename = "HB.csv",
+                       snps = HB$SNP,
+                       sep = ",",
+                       snp_col = "SNP",
+                       beta_col = "beta",
+                       se_col = "se",
+                       effect_allele_col = "effect_allele",
+                       other_allele_col = "other_allele",
+                       pval_col = "P")
+
+View(HB1)
+dim(HB1)
+
+# Correct in the same direction
+Mydata<-harmonise_data(
+  exposure_dat=exposure_dat,
+  outcome_dat=HB1,
+  action= 2  
+)                                 
+View(Mydata)
+dim(Mydata)
+res2 <- mr(Mydata)
+
+#step 3 meditor to outcome
+
+exposure.g<- extract_instruments(
+  outcomes='meditor',                                               
+  clump=TRUE, r2=0.001,                   
+  kb=10000,
+  access_token= NULL
+)
+outcome.xiazai<-read.table("outcome.txt",header = T)
+
+exposure.g_SNPID <-read.csv("exposure.g.csv", header = TRUE)
+
+HB<-merge(exposure.g_SNPID,
+          outcome.xiazai,
+          by.x = "SNP",
+          by.y = "MarkerName")
+
+#Read outcome data
+HB1<-read_outcome_data(filename = "HB.csv",
+                       sep = ",",
+                       snp_col = "SNPID",
+                       beta_col = "effect",
+                       se_col = "se",
+                       effect_allele_col = "a1",
+                       other_allele_col = "a2",
+                       pval_col = "Pvalue")
+
+# Correct in the same direction
+Mydata<-harmonise_data(
+  exposure_dat=exposure.g,
+  outcome_dat=HB1,
+  action= 2  
+)                                 
+res3 <- mr(Mydata)
+
+
+#4
+A_beta<- res2 %>%filter(method == "Inverse variance weighted") %>%pull(b)
+
+A_se<- res2 %>%filter(method == "Inverse variance weighted") %>%pull(se)
+
+
+B_beta<- res3 %>%filter(method == "Inverse variance weighted") %>%pull(b)
+
+B_se<- res3 %>%filter(method == "Inverse variance weighted") %>%pull(se)
+
+
+C_beta <- res1 %>%filter(method == "Inverse variance weighted") %>%pull(b)
+C_se <- res1 %>%filter(method == "Inverse variance weighted")%>% pull(se)
+
+
+#  Delta
+product_method_Delta <- function(A_beta, A_se, B_beta, B_se, verbose=F){
+  # calculate indirect effect of exposure on outcome (via mediator) 
+  # method 
+  # INDIRECT = TOTAL (exposure -> mediator) x TOTAL (mediator -> outcome)
+
+  indirect_beta <- A_beta * B_beta
+  
+  if (verbose) {print(paste("Indirect effect = ", round(A_beta, 2)," x ", round(B_beta,2), " = ", round(indirect_beta, 3)))}
+  
+  
+  # Calculate CIs using RMediation package
+  CIs = medci(A_beta, B_beta, A_se, B_se, type="dop")
+  
+  # put data into a tidy df
+  df <-data.frame(b = indirect_beta,
+                  se = CIs$SE,
+                  lo_ci = CIs[["95% CI"]][1],
+                  up_ci= CIs[["95% CI"]][2])
+  # calculate OR
+  df$or        <-  exp(df$b)
+  df$or_lci95 <- exp(df$lo_ci)
+  df$or_uci95 <- exp(df$up_ci)
+  
+  df<-round(df,3)
+  return(df)
+}
+
+#INDIRECT = A (exposure -> mediator) x B (mediator -> outcome)
+indirect_effect <- product_method_Delta(A_beta, A_se, B_beta, B_se)
+indirect_effect
+
+# The mediating effect
+indirect_effect[,1]/C_beta
+
+
+
+
+
+
